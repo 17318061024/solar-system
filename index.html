@@ -134,11 +134,24 @@
             transform: translate(-50%, -100%);
             z-index: 50;
             padding-bottom: 4px;
+            transition: opacity 0.3s;
         }
         .bank-label .name { font-weight: 600; text-shadow: 0 0 6px rgba(0,0,0,0.8); }
         .bank-label .amount { font-size: 9px; text-shadow: 0 0 6px rgba(0,0,0,0.8); }
         .bank-label.type-a { color: #00d4aa; }
         .bank-label.type-b { color: #7c3aed; }
+        .bank-label.extended {
+            background: rgba(15, 15, 35, 0.95);
+            border-radius: 10px;
+            padding: 12px 16px;
+            border: 1px solid rgba(255,255,255,0.15);
+            min-width: 140px;
+            text-align: left;
+        }
+        .bank-label.extended .name { font-size: 13px; display: block; margin-bottom: 8px; }
+        .bank-label.extended .amount { font-size: 11px; color: #00ff88; display: block; margin-bottom: 6px; }
+        .bank-label.extended .stats { display: flex; gap: 10px; font-size: 9px; color: #aaa; }
+        .bank-label.extended .stat-item span { color: #fff; }
 
         .hint-bar {
             position: fixed;
@@ -306,6 +319,21 @@
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, 256, 256);
 
+            // 添加黄色竖线（轴向条纹）
+            ctx.strokeStyle = 'rgba(255, 220, 100, 0.6)';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2;
+                const x1 = 128 + Math.cos(angle) * 20;
+                const y1 = 128 + Math.sin(angle) * 30;
+                const x2 = 128 + Math.cos(angle) * 100;
+                const y2 = 128 + Math.sin(angle) * 120;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+
             // 添加噪点纹理
             for (let i = 0; i < 2000; i++) {
                 const x = Math.random() * 256;
@@ -413,18 +441,15 @@
         }
 
         function createTrailParticles(sphere) {
-            const count = 20;
+            const count = 25;
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(count * 3);
-            const sizes = new Float32Array(count);
 
             for (let i = 0; i < count; i++) {
                 positions[i * 3] = 0; positions[i * 3 + 1] = 0; positions[i * 3 + 2] = 0;
-                sizes[i] = 1 + Math.random() * 2;
             }
 
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
             const canvas = document.createElement('canvas');
             canvas.width = 64; canvas.height = 64;
@@ -437,12 +462,12 @@
             ctx.fillRect(0, 0, 64, 64);
 
             const particles = new THREE.Points(geometry, new THREE.PointsMaterial({
-                size: 2, vertexColors: true, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, map: new THREE.CanvasTexture(canvas), sizeAttenuation: true
+                size: 3, color: 0xffffff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, map: new THREE.CanvasTexture(canvas), sizeAttenuation: true
             }));
             scene.add(particles);
 
             const data = { particles, sphere, velocities: [] };
-            for (let i = 0; i < count; i++) data.velocities.push({ x: 0, y: 0, z: 0, active: false, delay: i * 300 });
+            for (let i = 0; i < count; i++) data.velocities.push({ x: 0, y: 0, z: 0, active: false, delay: i * 200 });
             trailParticles.push(data);
         }
 
@@ -451,7 +476,35 @@
             label.className = `bank-label type-${bank.type.toLowerCase()}`;
             label.innerHTML = `<div class="name">${bank.abbr}</div><div class="amount">${bank.amount}</div>`;
             document.body.appendChild(label);
-            bankLabels.push({ element: label, sphere, bank });
+            bankLabels.push({ element: label, sphere, bank, isExtended: false });
+        }
+
+        function updateLabel(l, isSelected) {
+            const bank = l.bank;
+            if (isSelected && !l.isExtended) {
+                l.element.classList.add('extended');
+                l.element.innerHTML = `
+                    <div class="name">${bank.name}</div>
+                    <div class="amount">${bank.amount}</div>
+                    <div class="stats">
+                        <div class="stat-item">付款 <span>${bank.payment}</span></div>
+                        <div class="stat-item">收款 <span>${bank.receipt}</span></div>
+                        <div class="stat-item">转账 <span>${bank.transfer}</span></div>
+                    </div>`;
+                l.isExtended = true;
+            } else if (!isSelected && l.isExtended) {
+                l.element.classList.remove('extended');
+                l.element.innerHTML = `<div class="name">${bank.abbr}</div><div class="amount">${bank.amount}</div>`;
+                l.isExtended = false;
+            }
+            // Update position for extended label (higher up)
+            const offsetY = isSelected ? 55 : 18;
+            const p = l.sphere.position.clone();
+            p.y += offsetY;
+            p.project(camera);
+            l.element.style.left = ((p.x * 0.5 + 0.5) * window.innerWidth) + 'px';
+            l.element.style.top = ((-p.y * 0.5 + 0.5) * window.innerHeight - 12) + 'px';
+            l.element.style.opacity = p.z > 1 ? '0' : '1';
         }
 
         function createHuaweiLabel() {
@@ -602,9 +655,13 @@
                 huaweiLabel.element.style.top = ((-p.y * 0.5 + 0.5) * window.innerHeight - 15) + 'px';
                 huaweiLabel.element.style.opacity = p.z > 1 ? '0' : '1';
             }
-            bankLabels.forEach(l => {
+            bankLabels.forEach((l, i) => {
+                const bank = l.bank;
+                const isSelected = (selectedBank && selectedBank.name === bank.name);
+                const offsetY = isSelected ? 55 : 18;
                 const p = l.sphere.position.clone();
-                p.y += 18; p.project(camera);
+                p.y += offsetY;
+                p.project(camera);
                 l.element.style.left = ((p.x * 0.5 + 0.5) * window.innerWidth) + 'px';
                 l.element.style.top = ((-p.y * 0.5 + 0.5) * window.innerHeight - 12) + 'px';
                 l.element.style.opacity = p.z > 1 ? '0' : '1';
@@ -616,19 +673,40 @@
                 const pos = p.particles.geometry.attributes.position.array;
                 const sp = p.sphere.position;
                 const ang = p.sphere.userData.angle;
-                const rx = Math.cos(ang), rz = Math.sin(ang);
+                // 计算切线方向（旋转的反方向）
+                const tangentX = -Math.sin(ang);
+                const tangentZ = Math.cos(ang);
+                // 连线方向（指向球体的反方向，即外侧）
+                const dirX = -Math.cos(ang);
+                const dirZ = -Math.sin(ang);
+
                 p.velocities.forEach((v, i) => {
                     v.delay -= 16;
                     if (v.delay > 0) return;
                     if (!v.active) {
-                        pos[i*3]=sp.x; pos[i*3+1]=sp.y; pos[i*3+2]=sp.z;
-                        v.x=rx*(0.04+Math.random()*0.04); v.y=0.02+Math.random()*0.02; v.z=rz*(0.04+Math.random()*0.04);
-                        v.active=true;
+                        // 从球体外侧发射，沿切线方向运动，往下掉落
+                        pos[i*3] = sp.x + dirX * 5;
+                        pos[i*3+1] = sp.y + 2;
+                        pos[i*3+2] = sp.z + dirZ * 5;
+                        // 沿切线反向运动 + 轻微向外扩散 + 向下
+                        v.x = tangentX * (0.05 + Math.random() * 0.03) + dirX * 0.02;
+                        v.y = -0.03 - Math.random() * 0.02;  // 往下落
+                        v.z = tangentZ * (0.05 + Math.random() * 0.03) + dirZ * 0.02;
+                        v.active = true;
                     }
-                    v.y -= 0.002;
-                    pos[i*3] += v.x; pos[i*3+1] += v.y; pos[i*3+2] += v.z;
-                    v.life = (v.life || 1) - 0.01;
-                    if (v.life <= 0) { v.active=false; v.delay=600+Math.random()*400; pos[i*3]=sp.x; pos[i*3+1]=sp.y; pos[i*3+2]=sp.z; v.life=1; }
+                    // 粒子继续沿原方向运动
+                    pos[i*3] += v.x;
+                    pos[i*3+1] += v.y;
+                    pos[i*3+2] += v.z;
+                    v.life = (v.life || 1) - 0.012;
+                    if (v.life <= 0) {
+                        v.active = false;
+                        v.delay = 400 + Math.random() * 300;
+                        pos[i*3] = sp.x + dirX * 5;
+                        pos[i*3+1] = sp.y + 2;
+                        pos[i*3+2] = sp.z + dirZ * 5;
+                        v.life = 1;
+                    }
                 });
                 p.particles.geometry.attributes.position.needsUpdate = true;
             });
@@ -640,23 +718,45 @@
 
             bankSpheres.forEach((s, i) => {
                 const bank = s.userData.bank;
-                s.userData.angle += ORBIT_SPEED;
+                const isSelected = (selectedBank && selectedBank.name === bank.name);
+                // 选中时停止转动
+                if (!isSelected) {
+                    s.userData.angle += ORBIT_SPEED;
+                }
                 const radius = bank.orbitRadius;
                 s.position.set(Math.cos(s.userData.angle) * radius, s.userData.orbitY + Math.sin(time * 0.002 + i) * 2, Math.sin(s.userData.angle) * radius);
 
                 // 选中时显示光环
-                if (s.userData.isSelected) {
+                if (isSelected) {
                     s.userData.ring.material.opacity = 0.35;
                 } else {
                     s.userData.ring.material.opacity = 0;
                 }
 
                 // 选中时光环放大缩小
-                if (s.userData.isSelected) {
+                if (isSelected) {
                     const scale = 1 + Math.sin(time * 0.008) * 0.15;
                     s.userData.ring.scale.set(scale, scale, 1);
                 } else {
                     s.userData.ring.scale.set(1, 1, 1);
+                }
+
+                // 更新标签
+                bankLabels[i].isExtended = isSelected;
+                const label = bankLabels[i].element;
+                if (isSelected && !label.classList.contains('extended')) {
+                    label.classList.add('extended');
+                    label.innerHTML = `
+                        <div class="name">${bank.name}</div>
+                        <div class="amount">${bank.amount}</div>
+                        <div class="stats">
+                            <div class="stat-item">付款 <span>${bank.payment}</span></div>
+                            <div class="stat-item">收款 <span>${bank.receipt}</span></div>
+                            <div class="stat-item">转账 <span>${bank.transfer}</span></div>
+                        </div>`;
+                } else if (!isSelected && label.classList.contains('extended')) {
+                    label.classList.remove('extended');
+                    label.innerHTML = `<div class="name">${bank.abbr}</div><div class="amount">${bank.amount}</div>`;
                 }
 
                 const lineData = lines[i];
