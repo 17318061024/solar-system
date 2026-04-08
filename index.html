@@ -512,7 +512,7 @@
 
         function selectBank(bank, element) {
             document.querySelectorAll('.ranking-item').forEach(el => el.classList.remove('active'));
-            element.classList.add('active');
+            if (element) element.classList.add('active');
             selectedBank = bank;
         }
 
