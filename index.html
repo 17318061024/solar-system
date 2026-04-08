@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>金融数据可视化系统</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #0a0a1a;
+            color: #ffffff;
+            overflow: hidden;
+            height: 100vh;
+        }
+        #canvas-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+
+        .card {
+            background: rgba(15, 15, 35, 0.92);
+            border-radius: 16px;
+            padding: 20px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 100;
+        }
+        .card h3 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card h3::before {
+            content: '';
+            width: 3px;
+            height: 14px;
+            border-radius: 2px;
+        }
+
+        /* 左侧卡片 */
+        .left-card {
+            position: fixed;
+            left: 20px;
+            top: 30px;
+            width: 280px;
+            max-height: calc(100vh - 220px);
+            overflow-y: auto;
+        }
+        .left-card h3::before { background: linear-gradient(180deg, #00d4aa, #7c3aed); }
+        .ranking-list { display: flex; flex-direction: column; gap: 10px; }
+        .ranking-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .ranking-item:hover { background: rgba(255, 255, 255, 0.08); }
+        .ranking-item.active { background: rgba(0, 212, 170, 0.15); border: 1px solid rgba(0, 212, 170, 0.3); }
+        .rank-num {
+            width: 22px;
+            height: 22px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .rank-num.top3 { background: linear-gradient(135deg, #ffd700, #ff8c00); color: #000; }
+        .rank-num.other { background: rgba(255, 255, 255, 0.1); color: #666; }
+        .bank-info { flex: 1; }
+        .bank-info .name { font-size: 13px; font-weight: 500; }
+        .bank-info .amount { font-size: 11px; color: #00ff88; }
+        .trend-badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 500; }
+        .trend-badge.up { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+        .trend-badge.down { background: rgba(255, 71, 87, 0.2); color: #ff4757; }
+
+        /* 右侧卡片 */
+        .right-card { position: fixed; right: 20px; width: 260px; }
+        .right-card.financing-card { top: 30px; }
+        .right-card.certificate-card { top: 210px; }
+        .right-card h3::before { background: linear-gradient(180deg, #ff6b35, #ff8f5a); }
+        .right-card.certificate-card h3::before { background: linear-gradient(180deg, #7c3aed, #a78bfa); }
+        .chart-container { height: 90px; }
+
+        /* 底部卡片 */
+        .bottom-cards {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            z-index: 100;
+        }
+        .bottom-card { width: 150px; padding: 14px; }
+        .bottom-card h3 { font-size: 12px; margin-bottom: 10px; }
+        .bottom-card:nth-child(1) h3::before { background: #00d4aa; }
+        .bottom-card:nth-child(2) h3::before { background: #ff6b35; }
+        .bottom-card:nth-child(3) h3::before { background: #ffc107; }
+        .bottom-card:nth-child(4) h3::before { background: #7c3aed; }
+        .stat-item { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px; }
+        .stat-item .label { color: #888; }
+        .stat-item .value { color: #00ff88; font-weight: 500; }
+
+        /* 标签 */
+        .huawei-label {
+            position: absolute;
+            pointer-events: none;
+            font-size: 13px;
+            text-align: center;
+            transform: translate(-50%, -100%);
+            z-index: 50;
+            padding: 6px 12px;
+            background: rgba(255, 107, 53, 0.25);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 107, 53, 0.5);
+        }
+        .huawei-label .name { font-weight: 700; color: #ff6b35; }
+        .huawei-label .info { font-size: 10px; color: #aaa; margin-top: 2px; }
+        .huawei-label .info span { color: #00ff88; }
+
+        .bank-label {
+            position: absolute;
+            pointer-events: none;
+            font-size: 10px;
+            text-align: center;
+            transform: translate(-50%, -100%);
+            z-index: 50;
+            padding-bottom: 4px;
+        }
+        .bank-label .name { font-weight: 600; text-shadow: 0 0 6px rgba(0,0,0,0.8); }
+        .bank-label .amount { font-size: 9px; text-shadow: 0 0 6px rgba(0,0,0,0.8); }
+        .bank-label.type-a { color: #00d4aa; }
+        .bank-label.type-b { color: #7c3aed; }
+
+        .hint-bar {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 15, 35, 0.8);
+            padding: 8px 16px;
+            border-radius: 16px;
+            font-size: 11px;
+            color: #666;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 100;
+        }
+        .hint-bar span { color: #00ff88; }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <!-- 左侧卡片 -->
+    <div class="card left-card">
+        <h3>合作机构榜单</h3>
+        <div class="ranking-list" id="rankingList"></div>
+    </div>
+
+    <!-- 融资卡片 -->
+    <div class="card right-card financing-card">
+        <h3>融资概况</h3>
+        <div class="chart-container" id="waveChart"></div>
+    </div>
+
+    <!-- 单证卡片 -->
+    <div class="card right-card certificate-card">
+        <h3>单证概况</h3>
+        <div class="chart-container" id="areaChart"></div>
+    </div>
+
+    <!-- 底部卡片 -->
+    <div class="bottom-cards">
+        <div class="card bottom-card">
+            <h3>外汇管理</h3>
+            <div class="stat-item"><span class="label">结汇</span><span class="value">2.1亿</span></div>
+            <div class="stat-item"><span class="label">售汇</span><span class="value">1.8亿</span></div>
+            <div class="stat-item"><span class="label">跨境</span><span class="value">5.2亿</span></div>
+        </div>
+        <div class="card bottom-card">
+            <h3>应付账款</h3>
+            <div class="stat-item"><span class="label">待付款</span><span class="value">3,456</span></div>
+            <div class="stat-item"><span class="label">已付款</span><span class="value">12,890</span></div>
+            <div class="stat-item"><span class="label">逾期率</span><span class="value" style="color:#ff4757;">2.1%</span></div>
+        </div>
+        <div class="card bottom-card">
+            <h3>风险管理</h3>
+            <div class="stat-item"><span class="label">敞口</span><span class="value">1.2亿</span></div>
+            <div class="stat-item"><span class="label">不良率</span><span class="value" style="color:#00ff88;">0.32%</span></div>
+            <div class="stat-item"><span class="label">拨备</span><span class="value">285%</span></div>
+        </div>
+        <div class="card bottom-card">
+            <h3>合规审查</h3>
+            <div class="stat-item"><span class="label">待审核</span><span class="value">23</span></div>
+            <div class="stat-item"><span class="label">已通过</span><span class="value">1,567</span></div>
+            <div class="stat-item"><span class="label">合规率</span><span class="value">98.5%</span></div>
+        </div>
+    </div>
+
+    <div class="hint-bar">
+        <span>拖拽</span> 旋转 | <span>滚轮</span> 缩放 | <span>点击/悬停</span> 查看
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const banks = [
+            { name: '中国工商银行', abbr: 'ICBC', type: 'A', amount: '1.28亿', count: 18456, amountValue: 12800, trend: 'up', payment: 4500, receipt: 3800, transfer: 2100, withdraw: 1500 },
+            { name: '中国建设银行', abbr: 'CCB', type: 'B', amount: '1.15亿', count: 15234, amountValue: 11500, trend: 'up', payment: 4000, receipt: 3200, transfer: 1900, withdraw: 1300 },
+            { name: '中国农业银行', abbr: 'ABC', type: 'A', amount: '9800万', count: 13567, amountValue: 9800, trend: 'down', payment: 3500, receipt: 2800, transfer: 1600, withdraw: 1100 },
+            { name: '中国银行', abbr: 'BOC', type: 'B', amount: '8900万', count: 12345, amountValue: 8900, trend: 'up', payment: 3100, receipt: 2500, transfer: 1400, withdraw: 950 },
+            { name: '交通银行', abbr: 'BCOM', type: 'A', amount: '7600万', count: 9876, amountValue: 7600, trend: 'up', payment: 2700, receipt: 2100, transfer: 1200, withdraw: 800 },
+            { name: '招商银行', abbr: 'CMB', type: 'B', amount: '7200万', count: 8765, amountValue: 7200, trend: 'down', payment: 2500, receipt: 1900, transfer: 1100, withdraw: 750 },
+            { name: '浦发银行', abbr: 'SPDB', type: 'A', amount: '6500万', count: 7654, amountValue: 6500, trend: 'up', payment: 2300, receipt: 1700, transfer: 950, withdraw: 680 },
+            { name: '兴业银行', abbr: 'CIB', type: 'B', amount: '5800万', count: 6543, amountValue: 5800, trend: 'up', payment: 2000, receipt: 1500, transfer: 850, withdraw: 600 },
+            { name: '民生银行', abbr: 'CMBC', type: 'A', amount: '5200万', count: 5432, amountValue: 5200, trend: 'down', payment: 1800, receipt: 1300, transfer: 750, withdraw: 520 },
+            { name: '平安银行', abbr: 'PingAn', type: 'B', amount: '4800万', count: 4321, amountValue: 4800, trend: 'up', payment: 1650, receipt: 1150, transfer: 680, weigh: 450 }
+        ];
+        banks.sort((a, b) => b.amountValue - a.amountValue);
+
+        const ORBIT_SPEED = (Math.PI * 2) / 30000;
+        const layerYs = [30, 15, 0, -15];
+        const orbitRadii = [180, 210, 240, 270];
+        banks.forEach((bank, index) => {
+            bank.angle = (index / banks.length) * Math.PI * 2;
+            bank.orbitY = layerYs[index % 4];
+            bank.orbitRadius = orbitRadii[Math.floor(index / 3) % 4];
+            bank.curveType = index % 2; // 0 = upward curve, 1 = downward curve
+        });
+
+        const colors = { huawei: 0xff6b35, typeA: 0x00d4aa, typeB: 0x7c3aed };
+
+        let scene, camera, renderer;
+        let huaweiSphere, huaweiGlow;
+        let huaweiLabel;
+        let bankSpheres = [];
+        let bankLabels = [];
+        let lines = [];
+        let trailParticles = [];
+        let raycaster, mouse;
+        let hoveredObject = null;
+        let selectedBank = null;
+        let isDragging = false;
+        let selectedRingPulse = null;
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 150, 350);
+            camera.lookAt(0, 10, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            const pointLight = new THREE.PointLight(0xffffff, 1.2);
+            pointLight.position.set(0, 100, 80);
+            scene.add(pointLight);
+
+            createHuaweiSphere();
+            createBankSpheres();
+            createHuaweiLabel();
+            initUI();
+            initCharts();
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('mousedown', onMouseDown);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('mouseup', onMouseUp);
+            renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
+            animate();
+        }
+
+        // 华为中心 - 带纹理，移除圆环
+        function createHuaweiSphere() {
+            // 创建带纹理的球体
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            // 径向渐变底色
+            const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+            gradient.addColorStop(0, '#ff8855');
+            gradient.addColorStop(0.5, '#ff6b35');
+            gradient.addColorStop(1, '#cc4420');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 256, 256);
+
+            // 添加噪点纹理
+            for (let i = 0; i < 2000; i++) {
+                const x = Math.random() * 256;
+                const y = Math.random() * 256;
+                const r = Math.random() * 2;
+                ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.15})`;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 添加暗斑纹理
+            for (let i = 0; i < 30; i++) {
+                const x = Math.random() * 256;
+                const y = Math.random() * 256;
+                const r = 10 + Math.random() * 30;
+                ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.1})`;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const geometry = new THREE.SphereGeometry(28, 32, 32);
+            const material = new THREE.MeshPhongMaterial({
+                map: texture,
+                emissive: colors.huawei,
+                emissiveIntensity: 0.3,
+                shininess: 60
+            });
+
+            huaweiSphere = new THREE.Mesh(geometry, material);
+            huaweiSphere.position.set(0, 10, 0);
+            huaweiSphere.userData = { isHuawei: true };
+            scene.add(huaweiSphere);
+
+            // 外层光晕
+            const glowOuter = new THREE.SphereGeometry(36, 32, 32);
+            const glowMatOuter = new THREE.MeshBasicMaterial({ color: 0xff6b35, transparent: true, opacity: 0.18 });
+            const glowOuterMesh = new THREE.Mesh(glowOuter, glowMatOuter);
+            huaweiSphere.add(glowOuterMesh);
+            huaweiSphere.userData.glowOuter = glowOuterMesh;
+        }
+
+        function createBankSpheres() {
+            banks.forEach((bank, index) => {
+                const size = 12 + Math.random() * 3;
+                const geometry = new THREE.SphereGeometry(size, 32, 32);
+                const color = bank.type === 'A' ? colors.typeA : colors.typeB;
+                const material = new THREE.MeshPhongMaterial({
+                    color: color,
+                    emissive: color,
+                    emissiveIntensity: 0.4,
+                    shininess: 80
+                });
+
+                const sphere = new THREE.Mesh(geometry, material);
+                sphere.position.set(Math.cos(bank.angle) * bank.orbitRadius, bank.orbitY, Math.sin(bank.angle) * bank.orbitRadius);
+                sphere.userData = { bank, angle: bank.angle, orbitY: bank.orbitY, originalScale: 1, isSelected: false };
+
+                // 旋转光环 - 默认隐藏，选中时显示
+                const ringColor = bank.type === 'A' ? 0x00ffcc : 0xa78bfa;
+                const ring = new THREE.Mesh(
+                    new THREE.TorusGeometry(size * 1.8, 0.8, 16, 60),
+                    new THREE.MeshBasicMaterial({ color: ringColor, transparent: true, opacity: 0, side: THREE.DoubleSide })
+                );
+                ring.rotation.x = Math.PI / 2;
+                sphere.add(ring);
+                sphere.userData.ring = ring;
+
+                scene.add(sphere);
+                bankSpheres.push(sphere);
+
+                createLine(sphere, bank, index);
+                createTrailParticles(sphere);
+                createLabel(sphere, bank);
+            });
+        }
+
+        function createLine(sphere, bank, index) {
+            const curveType = bank.curveType;
+            let curve;
+            if (curveType === 0) {
+                // Upward curve (arc above)
+                curve = new THREE.QuadraticBezierCurve3(
+                    new THREE.Vector3(0, 10, 0),
+                    new THREE.Vector3(sphere.position.x * 0.5, 80, sphere.position.z * 0.5),
+                    sphere.position.clone()
+                );
+            } else {
+                // Downward curve (arc below)
+                curve = new THREE.QuadraticBezierCurve3(
+                    new THREE.Vector3(0, 10, 0),
+                    new THREE.Vector3(sphere.position.x * 0.5, -40, sphere.position.z * 0.5),
+                    sphere.position.clone()
+                );
+            }
+            const line = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints(curve.getPoints(30)),
+                new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 })
+            );
+            line.userData = { bank, baseOpacity: 0.25, curveType };
+            scene.add(line);
+            lines.push({ main: line, sphere: sphere, bank: bank });
+        }
+
+        function createTrailParticles(sphere) {
+            const count = 20;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(count * 3);
+            const sizes = new Float32Array(count);
+
+            for (let i = 0; i < count; i++) {
+                positions[i * 3] = 0; positions[i * 3 + 1] = 0; positions[i * 3 + 2] = 0;
+                sizes[i] = 1 + Math.random() * 2;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            g.addColorStop(0, 'rgba(255,255,255,1)');
+            g.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+            g.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 64, 64);
+
+            const particles = new THREE.Points(geometry, new THREE.PointsMaterial({
+                size: 2, vertexColors: true, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, map: new THREE.CanvasTexture(canvas), sizeAttenuation: true
+            }));
+            scene.add(particles);
+
+            const data = { particles, sphere, velocities: [] };
+            for (let i = 0; i < count; i++) data.velocities.push({ x: 0, y: 0, z: 0, active: false, delay: i * 300 });
+            trailParticles.push(data);
+        }
+
+        function createLabel(sphere, bank) {
+            const label = document.createElement('div');
+            label.className = `bank-label type-${bank.type.toLowerCase()}`;
+            label.innerHTML = `<div class="name">${bank.abbr}</div><div class="amount">${bank.amount}</div>`;
+            document.body.appendChild(label);
+            bankLabels.push({ element: label, sphere, bank });
+        }
+
+        function createHuaweiLabel() {
+            const label = document.createElement('div');
+            label.className = 'huawei-label';
+            label.innerHTML = `<div class="name">华为中心</div><div class="info">融资 <span>8.82亿</span></div>`;
+            document.body.appendChild(label);
+            huaweiLabel = { element: label, sphere: huaweiSphere };
+        }
+
+        function initUI() {
+            const list = document.getElementById('rankingList');
+            banks.forEach((bank, i) => {
+                const item = document.createElement('div');
+                item.className = 'ranking-item';
+                item.innerHTML = `<div class="rank-num ${i < 3 ? 'top3' : 'other'}">${i + 1}</div><div class="bank-info"><div class="name">${bank.name}</div><div class="amount">${bank.amount}</div></div><div class="trend-badge ${bank.trend}">${bank.trend === 'up' ? '↑' : '↓'}</div>`;
+                item.onclick = () => selectBank(bank, item);
+                list.appendChild(item);
+            });
+        }
+
+        function initCharts() {
+            // 融资水波图
+            const waveChart = echarts.init(document.getElementById('waveChart'));
+            waveChart.setOption({
+                grid: { top: 5, left: 0, right: 0, bottom: 0 },
+                xAxis: { type: 'category', data: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false } },
+                yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false } },
+                series: [{
+                    type: 'line',
+                    smooth: true,
+                    symbol: 'none',
+                    lineStyle: { color: 'transparent' },
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(0, 212, 170, 0.6)' }, { offset: 1, color: 'rgba(0, 212, 170, 0.05)' }]) },
+                    data: [3.2, 4.1, 3.8, 5.2, 4.8, 5.5, 6.2, 5.8, 6.5, 7.2, 8.1, 8.82],
+                    animationDuration: 2000,
+                    animationEasing: 'cubicOut'
+                }]
+            });
+
+            // 单证面积图
+            const areaChart = echarts.init(document.getElementById('areaChart'));
+            areaChart.setOption({
+                grid: { top: 5, left: 0, right: 0, bottom: 0 },
+                xAxis: { type: 'category', data: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false } },
+                yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false } },
+                series: [{
+                    type: 'line',
+                    smooth: true,
+                    symbol: 'none',
+                    lineStyle: { color: '#7c3aed', width: 2 },
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(124, 58, 237, 0.5)' }, { offset: 1, color: 'rgba(124, 58, 237, 0.05)' }]) },
+                    data: [8500, 9200, 8800, 10500, 9800, 11200, 10800, 11500, 12000, 11800, 12500, 128456],
+                    animationDuration: 2000
+                }]
+            });
+        }
+
+        function selectBank(bank, element) {
+            document.querySelectorAll('.ranking-item').forEach(el => el.classList.remove('active'));
+            element.classList.add('active');
+            selectedBank = bank;
+        }
+
+        let lastMouseX, lastMouseY, cameraAngleX = 0, cameraAngleY = 0.2;
+
+        function onMouseDown(e) {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            renderer.domElement.style.cursor = 'grabbing';
+        }
+        function onMouseUp() {
+            isDragging = false;
+            renderer.domElement.style.cursor = hoveredObject ? 'pointer' : 'default';
+        }
+        function onMouseMove(e) {
+            if (isDragging) {
+                const dx = e.clientX - lastMouseX, dy = e.clientY - lastMouseY;
+                cameraAngleX += dx * 0.005;
+                cameraAngleY = Math.max(-0.3, Math.min(0.8, cameraAngleY + dy * 0.005));
+                const r = 380;
+                camera.position.set(Math.sin(cameraAngleX) * r * Math.cos(cameraAngleY), 10 + Math.sin(cameraAngleY) * r, Math.cos(cameraAngleX) * r * Math.cos(cameraAngleY));
+                camera.lookAt(0, 10, 0);
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                return;
+            }
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const hits = raycaster.intersectObjects([huaweiSphere, ...bankSpheres]);
+
+            if (hoveredObject) {
+                if (hoveredObject.userData.isHuawei) {
+                    huaweiGlow.material.opacity = 0.35;
+                } else {
+                    // 恢复时隐藏光环
+                    hoveredObject.userData.ring.material.opacity = 0;
+                    hoveredObject.userData.isSelected = false;
+                    const line = lines.find(l => l.main.userData.bank === hoveredObject.userData.bank);
+                    if (line) { line.main.material.color.setHex(0xffffff); line.main.material.opacity = line.main.userData.baseOpacity; }
+                }
+            } else {
+                // 恢复所有银行状态
+                bankSpheres.forEach(s => {
+                    s.userData.isSelected = false;
+                    s.userData.ring.material.opacity = 0;
+                });
+                lines.forEach(l => {
+                    l.main.material.color.setHex(0xffffff);
+                    l.main.material.opacity = l.main.userData.baseOpacity;
+                });
+                selectedBank = null;
+                document.querySelectorAll('.ranking-item').forEach(el => el.classList.remove('active'));
+            }
+
+            if (hits.length > 0) {
+                const obj = hits[0].object;
+                hoveredObject = obj;
+                renderer.domElement.style.cursor = 'pointer';
+                if (obj.userData.isHuawei) {
+                    huaweiGlow.material.opacity = 0.35;
+                } else {
+                    // 悬停时显示光环
+                    obj.userData.ring.material.opacity = 0.6;
+                    obj.userData.isSelected = true;
+                    const line = lines.find(l => l.main.userData.bank === obj.userData.bank);
+                    if (line) { line.main.material.color.setHex(0x00ff88); line.main.material.opacity = 0.7; }
+                    selectBank(obj.userData.bank, null);
+                }
+            } else {
+                hoveredObject = null;
+                renderer.domElement.style.cursor = 'default';
+            }
+        }
+        function onWheel(e) {
+            e.preventDefault();
+            camera.position.multiplyScalar(e.deltaY > 0 ? 1.1 : 0.9);
+            camera.position.clampLength(150, 600);
+        }
+
+        function updateLabels() {
+            if (huaweiLabel) {
+                const p = huaweiLabel.sphere.position.clone();
+                p.y += 32; p.project(camera);
+                huaweiLabel.element.style.left = ((p.x * 0.5 + 0.5) * window.innerWidth) + 'px';
+                huaweiLabel.element.style.top = ((-p.y * 0.5 + 0.5) * window.innerHeight - 15) + 'px';
+                huaweiLabel.element.style.opacity = p.z > 1 ? '0' : '1';
+            }
+            bankLabels.forEach(l => {
+                const p = l.sphere.position.clone();
+                p.y += 18; p.project(camera);
+                l.element.style.left = ((p.x * 0.5 + 0.5) * window.innerWidth) + 'px';
+                l.element.style.top = ((-p.y * 0.5 + 0.5) * window.innerHeight - 12) + 'px';
+                l.element.style.opacity = p.z > 1 ? '0' : '1';
+            });
+        }
+
+        function updateTrailParticles() {
+            trailParticles.forEach(p => {
+                const pos = p.particles.geometry.attributes.position.array;
+                const sp = p.sphere.position;
+                const ang = p.sphere.userData.angle;
+                const rx = Math.cos(ang), rz = Math.sin(ang);
+                p.velocities.forEach((v, i) => {
+                    v.delay -= 16;
+                    if (v.delay > 0) return;
+                    if (!v.active) {
+                        pos[i*3]=sp.x; pos[i*3+1]=sp.y; pos[i*3+2]=sp.z;
+                        v.x=rx*(0.04+Math.random()*0.04); v.y=0.02+Math.random()*0.02; v.z=rz*(0.04+Math.random()*0.04);
+                        v.active=true;
+                    }
+                    v.y -= 0.002;
+                    pos[i*3] += v.x; pos[i*3+1] += v.y; pos[i*3+2] += v.z;
+                    v.life = (v.life || 1) - 0.01;
+                    if (v.life <= 0) { v.active=false; v.delay=600+Math.random()*400; pos[i*3]=sp.x; pos[i*3+1]=sp.y; pos[i*3+2]=sp.z; v.life=1; }
+                });
+                p.particles.geometry.attributes.position.needsUpdate = true;
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = Date.now();
+
+            bankSpheres.forEach((s, i) => {
+                const bank = s.userData.bank;
+                s.userData.angle += ORBIT_SPEED;
+                const radius = bank.orbitRadius;
+                s.position.set(Math.cos(s.userData.angle) * radius, s.userData.orbitY + Math.sin(time * 0.002 + i) * 2, Math.sin(s.userData.angle) * radius);
+
+                // 选中时显示光环
+                if (s.userData.isSelected) {
+                    s.userData.ring.material.opacity = 0.35;
+                } else {
+                    s.userData.ring.material.opacity = 0;
+                }
+
+                // 选中时光环放大缩小
+                if (s.userData.isSelected) {
+                    const scale = 1 + Math.sin(time * 0.008) * 0.15;
+                    s.userData.ring.scale.set(scale, scale, 1);
+                } else {
+                    s.userData.ring.scale.set(1, 1, 1);
+                }
+
+                const lineData = lines[i];
+                const curveType = lineData.main.userData.curveType;
+                let curve;
+                if (curveType === 0) {
+                    curve = new THREE.QuadraticBezierCurve3(
+                        new THREE.Vector3(0, 10, 0),
+                        new THREE.Vector3(s.position.x * 0.5, 80, s.position.z * 0.5),
+                        s.position.clone()
+                    );
+                } else {
+                    curve = new THREE.QuadraticBezierCurve3(
+                        new THREE.Vector3(0, 10, 0),
+                        new THREE.Vector3(s.position.x * 0.5, -40, s.position.z * 0.5),
+                        s.position.clone()
+                    );
+                }
+                lineData.main.geometry.setFromPoints(curve.getPoints(30));
+            });
+
+            huaweiSphere.rotation.y += 0.004;
+            if (huaweiSphere.userData.glowOuter) huaweiSphere.userData.glowOuter.rotation.y += 0.002;
+
+            updateTrailParticles();
+            updateLabels();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+    </script>
+</body>
+</html>
