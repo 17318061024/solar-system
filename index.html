@@ -779,7 +779,7 @@
 
         const material = new THREE.PointsMaterial({
           size: 2,
-          vertexColors: true,
+          vertexColors: false,
           transparent: true,
           opacity: 0.9,
           sizeAttenuation: true,
@@ -981,92 +981,53 @@
             sphere.position.clone(),
           );
 
-          // 使用Line实现线条效果
-          const line = new THREE.Line(
+          // 使用Line实现线条效果 - 加粗版本（双线叠加）
+          const lineColor = new THREE.Color(inst.color);
+          // 外层线（较粗，较淡）
+          const lineOuter = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(curve.getPoints(50)),
             new THREE.LineBasicMaterial({
-              color: 0x888888,
+              color: lineColor,
               transparent: true,
-              opacity: 0.3,
+              opacity: 0.15,
             }),
           );
-          line.userData = {
+          // 内层线（较细，较亮）
+          const lineInner = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(curve.getPoints(50)),
+            new THREE.LineBasicMaterial({
+              color: lineColor,
+              transparent: true,
+              opacity: 0.4,
+            }),
+          );
+          const lineGroup = new THREE.Group();
+          lineGroup.add(lineOuter);
+          lineGroup.add(lineInner);
+          lineGroup.userData = {
             inst,
-            baseOpacity: 0.3,
+            baseOpacity: 0.15,
             sphereColor: inst.color,
             curve: curve,
             sphereRef: sphere,
           };
-          scene.add(line);
-          connectionLines.push({ line, sphere, inst });
+          scene.add(lineGroup);
+          connectionLines.push({ line: lineGroup, sphere, inst });
 
           // 创建球体外抛粒子 - 从球体外侧往外下方抛出
           createTrailParticles(sphere);
         }, 50);
       }
 
-      // 球体外抛粒子效果 - 沿球体外侧运动
+      // 球体外抛粒子效果 - 动态创建和销毁粒子
       function createTrailParticles(sphere) {
-        const count = 30;
-        const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(count * 3);
-
-        for (let i = 0; i < count; i++) {
-          positions[i * 3] = 0;
-          positions[i * 3 + 1] = 0;
-          positions[i * 3 + 2] = 0;
-        }
-
-        geometry.setAttribute(
-          'position',
-          new THREE.BufferAttribute(positions, 3),
-        );
-
-        // 创建圆形粒子纹理
-        const createCircleTexture = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 64;
-          canvas.height = 64;
-          const ctx = canvas.getContext('2d');
-          const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-          gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-          gradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.8)');
-          gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-          ctx.fillStyle = gradient;
-          ctx.fillRect(0, 0, 64, 64);
-          return new THREE.CanvasTexture(canvas);
-        };
-
-        const circleTexture = createCircleTexture();
-
-        const material = new THREE.PointsMaterial({
-          size: 5,
-          map: circleTexture,
-          color: 0xffffff,
-          transparent: true,
-          opacity: 0.4,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        });
-
-        const particles = new THREE.Points(geometry, material);
-        scene.add(particles);
-
         const data = {
-          particles,
           sphere,
-          velocities: [],
+          particles: [], // 动态粒子数组
+          lastSpawnTime: 0,
+          nextSpawnTime: 1000 + Math.random() * 1000, // 1-2秒随机发射
+          maxLife: 300, // 生命周期（帧）
         };
-
-        for (let i = 0; i < count; i++) {
-          data.velocities.push({
-            x: 0,
-            y: 0,
-            z: 0,
-            active: false,
-            life: 0,
-          });
-        }
 
         lineParticles.push(data);
       }
@@ -1236,9 +1197,15 @@
             (l) => l.inst === hoveredNode.userData.inst,
           );
           if (lineData) {
-            // 恢复默认灰色
-            lineData.line.material.color.setHex(0x888888);
-            lineData.line.material.opacity = lineData.line.userData.baseOpacity;
+            // 恢复默认颜色
+            const origColor = lineData.line.userData.sphereColor;
+            lineData.line.children.forEach((child) => {
+              child.material.color.setHex(origColor);
+            });
+            lineData.line.children[0].material.opacity =
+              lineData.line.userData.baseOpacity;
+            lineData.line.children[1].material.opacity =
+              lineData.line.userData.baseOpacity * 2;
           }
         }
 
@@ -1258,8 +1225,10 @@
             if (lineData) {
               // 高亮连线：使用球体颜色
               const sphereColor = new THREE.Color(obj.userData.inst.color);
-              lineData.line.material.color.copy(sphereColor);
-              lineData.line.material.opacity = 0.7;
+              lineData.line.children.forEach((child) => {
+                child.material.color.copy(sphereColor);
+                child.material.opacity = 0.7;
+              });
             }
             selectNode(obj.userData.inst, null);
           }
@@ -1335,12 +1304,13 @@
         });
       }
 
-      // 更新连线粒子 - 简化版：单个粒子依次发出
+      // 更新连线粒子 - 动态创建和销毁
       function updateLineParticles() {
-        lineParticles.forEach((data) => {
-          if (!data.particles.visible) return;
+        const now = Date.now();
 
-          const pos = data.particles.geometry.attributes.position.array;
+        lineParticles.forEach((data) => {
+          if (!data.sphere.visible) return;
+
           const sp = data.sphere.position;
           const ang = data.sphere.userData.angle;
           const sphere = data.sphere;
@@ -1350,48 +1320,110 @@
           const dirZ = Math.sin(ang);
           const radius = sphere.userData.baseSize || 15;
 
-          // 帧计数器
-          data.frameCount = (data.frameCount || 0) + 1;
+          // 定期创建新粒子（1-2秒随机间隔）
+          if (now > data.nextSpawnTime) {
+            data.lastSpawnTime = now;
+            // 下次发射时间：1-2秒随机
+            data.nextSpawnTime = now + 1000 + Math.random() * 1000;
 
-          data.velocities.forEach((v, i) => {
-            // 每个粒子依次发射，每30帧一个新粒子
-            if (!v.active && data.frameCount >= i * 30 + 50) {
-              // 粒子激活，从球体最外侧开始
-              pos[i * 3] = sp.x + dirX * (radius + 2);
-              pos[i * 3 + 1] = sp.y + 2;
-              pos[i * 3 + 2] = sp.z + dirZ * (radius + 2);
+            // 创建新粒子
+            data.particles.push({
+              x: sp.x + dirX * (radius + 2),
+              y: sp.y + 2,
+              z: sp.z + dirZ * (radius + 2),
+              vx: dirX * 0.15,
+              vy: 0,
+              vz: dirZ * 0.15,
+              life: data.maxLife,
+            });
+          }
 
-              // 速度：沿背离中心方向直线移动
-              v.x = dirX * 0.15;
-              v.y = 0;
-              v.z = dirZ * 0.15;
+          // 更新所有粒子
+          for (let i = data.particles.length - 1; i >= 0; i--) {
+            const p = data.particles[i];
 
-              v.active = true;
-              v.life = 0;
+            // 移动
+            p.x += p.vx;
+            p.y += p.vy;
+            p.z += p.vz;
+
+            // 生命周期减少
+            p.life--;
+
+            // 透明度为0时删除粒子
+            if (p.life <= 0) {
+              data.particles.splice(i, 1);
+            }
+          }
+
+          // 更新粒子几何体
+          if (data.particles.length > 0) {
+            // 动态更新 geometry
+            const positions = new Float32Array(data.particles.length * 3);
+            const colors = new Float32Array(data.particles.length * 3);
+
+            data.particles.forEach((p, i) => {
+              positions[i * 3] = p.x;
+              positions[i * 3 + 1] = p.y;
+              positions[i * 3 + 2] = p.z;
+
+              // 颜色随生命周期衰减
+              const fade = p.life / data.maxLife;
+              colors[i * 3] = fade * 1.5;
+              colors[i * 3 + 1] = fade * 1.5;
+              colors[i * 3 + 2] = fade * 1.5;
+            });
+
+            // 重建 geometry
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            // 创建清晰的白色圆形粒子纹理
+            const createCircleTexture = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = 64;
+              canvas.height = 64;
+              const ctx = canvas.getContext('2d');
+              ctx.fillStyle = '#ffffff';
+              ctx.beginPath();
+              ctx.arc(32, 32, 32, 0, Math.PI * 2);
+              ctx.fill();
+              const texture = new THREE.CanvasTexture(canvas);
+              texture.magFilter = THREE.LinearFilter;
+              texture.minFilter = THREE.LinearFilter;
+              return texture;
+            };
+
+            const circleTexture = createCircleTexture();
+
+            const material = new THREE.PointsMaterial({
+              size: 3,
+              map: circleTexture,
+              vertexColors: true,
+              transparent: true,
+              opacity: 1,
+              blending: THREE.NormalBlending,
+              depthWrite: false,
+              sizeAttenuation: true,
+            });
+
+            // 移除旧的 particles 对象，创建新的
+            if (data.particlesObj) {
+              scene.remove(data.particlesObj);
+              data.particlesObj.geometry.dispose();
+              data.particlesObj.material.dispose();
             }
 
-            if (v.active) {
-              // 直线移动
-              pos[i * 3] += v.x;
-              pos[i * 3 + 1] += v.y;
-              pos[i * 3 + 2] += v.z;
-
-              v.life++;
-
-              // 存活150帧后消失，然后新粒子会继续发射
-              const maxLife = 300;
-
-              if (v.life > maxLife) {
-                v.active = false;
-                // 重置到球体位置
-                pos[i * 3] = sp.x + dirX * (radius + 2);
-                pos[i * 3 + 1] = sp.y + 2;
-                pos[i * 3 + 2] = sp.z + dirZ * (radius + 2);
-              }
+            data.particlesObj = new THREE.Points(geometry, material);
+            scene.add(data.particlesObj);
+            data.particlesObj.visible = true;
+          } else {
+            // 没有粒子时隐藏
+            if (data.particlesObj) {
+              data.particlesObj.visible = false;
             }
-          });
-
-          data.particles.geometry.attributes.position.needsUpdate = true;
+          }
         });
       }
 
@@ -1495,13 +1527,17 @@
             ),
             sphere.position.clone(),
           );
-          lineData.line.geometry.dispose();
-          lineData.line.geometry = new THREE.BufferGeometry().setFromPoints(
-            newCurve.getPoints(50),
-          );
-          // 保存新的曲线和球体引用用于hover时重建
+          // 更新Group的两条子线
+          if (lineData.line.children && lineData.line.children.length >= 2) {
+            lineData.line.children[0].geometry.dispose();
+            lineData.line.children[0].geometry =
+              new THREE.BufferGeometry().setFromPoints(newCurve.getPoints(50));
+            lineData.line.children[1].geometry.dispose();
+            lineData.line.children[1].geometry =
+              new THREE.BufferGeometry().setFromPoints(newCurve.getPoints(50));
+          }
+          // 保存新的曲线引用
           lineData.line.userData.curve = newCurve;
-          lineData.line.userData.sphereRef = sphere;
 
           // 更新标签状态
           nodeLabels[i].isExtended = isSelected;
