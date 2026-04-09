@@ -279,16 +279,38 @@
         border-radius: 20px;
         border: 1px solid rgba(255, 107, 53, 0.4);
         backdrop-filter: blur(10px);
+        will-change: transform, opacity;
+      }
+      .core-label .dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        background: #ff6b35;
+        border-radius: 50%;
+        vertical-align: middle;
+        margin-right: 6px;
+        box-shadow: 0 0 8px #ff6b35;
+      }
+      .core-label .line {
+        width: 100%;
+        height: 2px;
+        background: #ff6b35;
+        margin: 6px 0;
       }
       .core-label .name {
         font-weight: 700;
         font-size: 14px;
         color: #ff6b35;
       }
+      .core-label .row {
+        display: flex;
+        justify-content: center;
+        gap: 16px;
+        margin-top: 4px;
+      }
       .core-label .data {
         font-size: 10px;
         color: #ccc;
-        margin-top: 4px;
       }
       .core-label .data span {
         color: #00ff88;
@@ -306,6 +328,7 @@
         border-radius: 12px;
         border: 1px solid rgba(255, 255, 255, 0.1);
         transition: all 0.3s;
+        will-change: transform;
       }
       .node-label .abbr {
         font-weight: 600;
@@ -639,7 +662,7 @@
       // 全局配置
       const ORBIT_SPEED = (Math.PI * 2) / 10000;
       const CORE_RADIUS = 35;
-      const orbitRadii = [140, 180, 220, 260, 300, 340];
+      const orbitRadii = [130, 140, 150, 160, 170, 180];
       const layerYs = [40, 20, 0, -20, -40];
 
       // 初始化角度和轨道
@@ -647,7 +670,7 @@
         inst.angle = (index / institutions.length) * Math.PI * 2;
         inst.orbitRadius = orbitRadii[index % 6];
         inst.orbitY = layerYs[index % 5];
-        inst.curveHeight = index % 2 === 0 ? 60 : -30;
+        inst.curveHeight = index % 2 === 0 ? 40 : -20;
       });
 
       // Three.js 场景
@@ -689,9 +712,9 @@
           .appendChild(renderer.domElement);
 
         // 灯光
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
         scene.add(ambientLight);
-        const pointLight = new THREE.PointLight(0xffffff, 1.5, 500);
+        const pointLight = new THREE.PointLight(0xffffff, 1, 500);
         pointLight.position.set(50, 100, 100);
         scene.add(pointLight);
 
@@ -811,8 +834,10 @@
         coreSphere.userData = { isCore: true };
         scene.add(coreSphere);
 
-        // 两个大圈 - 内层深色，外层浅色，几乎在最内层轨道球体附近
-        const orbitRingColors = [0x4fc3f7, 0x29b6f6];
+        // 两个大圈 - 使用核心球体颜色
+        const coreColor = 0xff6b35;
+        const coreColorLight = 0xff8f5f;
+        const orbitRingColors = [coreColor, coreColorLight];
         const orbitRingRadii = [130, 185];
 
         for (let i = 0; i < 2; i++) {
@@ -824,8 +849,9 @@
           const ringMat = new THREE.MeshBasicMaterial({
             color: orbitRingColors[i],
             transparent: true,
-            opacity: i === 0 ? 0.3 : 0.04,
+            opacity: i === 0 ? 0.5 : 0.15,
             side: THREE.DoubleSide,
+            depthWrite: false,
           });
           const ring = new THREE.Mesh(ringGeo, ringMat);
           ring.rotation.x = Math.PI / 2;
@@ -834,7 +860,8 @@
             index: i,
             speed: 0.0003 + i * 0.0002,
           };
-          coreSphere.add(ring);
+          // 添加到场景而不是核心球体，避免深度遮挡
+          scene.add(ring);
           coreGlowRings.push(ring);
         }
 
@@ -855,10 +882,10 @@
         institutions.forEach((inst, index) => {
           const size =
             inst.category === 'large'
-              ? 18
+              ? 10
               : inst.category === 'medium'
-                ? 14
-                : 10;
+                ? 8
+                : 6;
           const color = new THREE.Color(inst.color);
 
           const geometry = new THREE.SphereGeometry(size, 32, 32);
@@ -885,10 +912,10 @@
           scene.add(sphere);
           nodeSpheres.push(sphere);
 
-          // 蓝色光圈 - 紧贴球体，朝向相机
-          const glowRingGeo = new THREE.RingGeometry(size + 0.5, size + 4, 64);
+          // 蓝色光圈 - 紧贴球体，使用球体颜色
+          const glowRingGeo = new THREE.RingGeometry(size, size + 2.5, 64);
           const glowRingMat = new THREE.MeshBasicMaterial({
-            color: 0x4fc3f7,
+            color: color,
             transparent: true,
             opacity: 0.25,
             side: THREE.DoubleSide,
@@ -897,41 +924,109 @@
           scene.add(glowRing);
           sphere.userData.glowRing = glowRing;
 
-          // 白色半圆 - 头部亮尾部暗渐变
-          const createTexture = () => {
+          // 白色半圆 - Sprite 自动面向相机 + 自身旋转
+          const createHalfCircleTexture = () => {
             const canvas = document.createElement('canvas');
             canvas.width = 256;
-            canvas.height = 64;
+            canvas.height = 128;
             const ctx = canvas.getContext('2d');
-            // 线性渐变：尾部透明 → 头部最亮
-            const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+            // 绘制半圆渐变
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.beginPath();
+            ctx.arc(128, 64, 60, Math.PI, 0);
+            ctx.fill();
+            // 径向渐变使头部亮尾部暗
+            const gradient = ctx.createRadialGradient(200, 64, 0, 128, 64, 120);
             gradient.addColorStop(0, 'rgba(255,255,255,0)');
-            gradient.addColorStop(0.3, 'rgba(255,255,255,0.4)');
-            gradient.addColorStop(0.6, 'rgba(255,255,255,0.9)');
-            gradient.addColorStop(1, 'rgba(255,255,255,1)');
+            gradient.addColorStop(0.5, 'rgba(255,255,255,0.4)');
+            gradient.addColorStop(1, 'rgba(255,255,255,0.8)');
             ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, 256, 64);
+            ctx.beginPath();
+            ctx.arc(128, 64, 55, Math.PI, 0);
+            ctx.fill();
             return new THREE.CanvasTexture(canvas);
           };
-          const arcTexture = createTexture();
-          const arcGeo = new THREE.RingGeometry(
-            size + 0.8,
-            size + 2.3,
-            32,
-            1,
-            0,
-            Math.PI,
+
+          const arcTexture = createHalfCircleTexture();
+
+          // 白色光环 - 半圆飞线（Shader 控制大小和透明度）
+          // 头部亮(darkData小) -> 尾部暗(darkData大)，透明度1 -> 0
+          const dotCount = 150;
+          const dotPositions = new Float32Array(dotCount * 3);
+          const dotData = new Float32Array(dotCount);
+
+          for (let i = 0; i < dotCount; i++) {
+            // 从 PI 到 2*PI（半圆，上半圆）
+            const angle = Math.PI + (Math.PI * i) / dotCount;
+            const radius = size + 4; // 增加一点半径让它在球体外更明显
+            dotPositions[i * 3] = Math.cos(angle) * radius;
+            dotPositions[i * 3 + 1] = Math.sin(angle) * radius;
+            dotPositions[i * 3 + 2] = 0;
+            // i=0 是头部（最右端），i=max 是尾部（最左端）
+            dotData[i] = i / dotCount;
+          }
+
+          const dotGeometry = new THREE.BufferGeometry();
+          dotGeometry.setAttribute(
+            'position',
+            new THREE.BufferAttribute(dotPositions, 3),
           );
-          const arcMat = new THREE.MeshBasicMaterial({
-            map: arcTexture,
+          dotGeometry.setAttribute(
+            'aData',
+            new THREE.BufferAttribute(dotData, 1),
+          );
+
+          const dotVertexShader = `
+            attribute float aData;
+            varying float vData;
+            uniform float uTime;
+            uniform float uRadius;
+            void main() {
+              vData = aData;
+              // 逆时针旋转: time 让头部(位置0)先移动
+              float angle = aData * 3.14159 - uTime * 3.14159;
+              float newAngle = 3.14159 + angle;
+              newAngle = mod(newAngle, 6.28318);
+              vec3 pos = vec3(cos(newAngle) * uRadius, sin(newAngle) * uRadius, 0.0);
+              vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+              // 头部(aData小)点大，尾部(aData大)点小，最小保持1.0
+              float baseSize = 5.0 - aData * 3.5;
+              gl_PointSize = max(baseSize, 1.5) * (200.0 / -mvPosition.z);
+              gl_Position = projectionMatrix * mvPosition;
+            }
+          `;
+
+          const dotFragmentShader = `
+            varying float vData;
+            void main() {
+              vec2 center = gl_PointCoord - vec2(0.5);
+              float dist = length(center);
+              if (dist > 0.5) discard;
+              // 头部透明度1 -> 尾部透明度0，中间渐变
+              float alpha = 1.0 - vData * vData; // 二次缓动，渐变更平滑
+              alpha = pow(alpha, 0.6); // 调整渐变曲线，让更多点可见
+              // 边缘柔化
+              float softness = 1.0 - smoothstep(0.3, 0.5, dist);
+              // 增加整体亮度和透明度
+              gl_FragColor = vec4(1.0, 1.0, 1.0, alpha * softness * 2.0);
+            }
+          `;
+
+          const dotMaterial = new THREE.ShaderMaterial({
+            vertexShader: dotVertexShader,
+            fragmentShader: dotFragmentShader,
             transparent: true,
-            opacity: 1,
-            side: THREE.DoubleSide,
+            depthWrite: false,
             blending: THREE.AdditiveBlending,
+            uniforms: {
+              uTime: { value: 0 },
+              uRadius: { value: size + 4 },
+            },
           });
-          const arc = new THREE.Mesh(arcGeo, arcMat);
-          scene.add(arc);
-          sphere.userData.arc = arc;
+
+          const dotPoints = new THREE.Points(dotGeometry, dotMaterial);
+          scene.add(dotPoints);
+          sphere.userData.arc = dotPoints;
 
           // 呼吸光环 - 默认隐藏，选中时显示
           const ringGeo = new THREE.TorusGeometry(size * 1.6, 1.2, 16, 48);
@@ -989,7 +1084,7 @@
             new THREE.LineBasicMaterial({
               color: lineColor,
               transparent: true,
-              opacity: 0.15,
+              opacity: 0.35,
             }),
           );
           // 内层线（较细，较亮）
@@ -998,7 +1093,7 @@
             new THREE.LineBasicMaterial({
               color: lineColor,
               transparent: true,
-              opacity: 0.4,
+              opacity: 0.7,
             }),
           );
           const lineGroup = new THREE.Group();
@@ -1006,7 +1101,7 @@
           lineGroup.add(lineInner);
           lineGroup.userData = {
             inst,
-            baseOpacity: 0.15,
+            baseOpacity: 0.35,
             sphereColor: inst.color,
             curve: curve,
             sphereRef: sphere,
@@ -1015,18 +1110,20 @@
           connectionLines.push({ line: lineGroup, sphere, inst });
 
           // 创建球体外抛粒子 - 从球体外侧往外下方抛出
-          createTrailParticles(sphere);
+          createTrailParticles(sphere, inst);
         }, 50);
       }
 
       // 球体外抛粒子效果 - 动态创建和销毁粒子
-      function createTrailParticles(sphere) {
+      function createTrailParticles(sphere, inst) {
+        const sphereColor = new THREE.Color(inst.color);
         const data = {
           sphere,
           particles: [], // 动态粒子数组
           lastSpawnTime: 0,
-          nextSpawnTime: 1000 + Math.random() * 1000, // 1-2秒随机发射
-          maxLife: 300, // 生命周期（帧）
+          nextSpawnTime: 400 + Math.random() * 400, // 1-2秒随机发射
+          maxLife: 600, // 生命周期（帧）
+          sphereColor: sphereColor,
         };
 
         lineParticles.push(data);
@@ -1041,11 +1138,27 @@
         nodeLabels.push({ element: label, sphere, inst, isExtended: false });
       }
 
+      // 格式化数字（亿/T）
+      function formatNumber(num) {
+        if (num >= 100000000000) {
+          return (num / 100000000000).toFixed(2) + 'T';
+        } else if (num >= 100000000) {
+          return (num / 100000000).toFixed(0) + '亿';
+        }
+        return num.toString();
+      }
+
       // 创建核心标签
       function createCoreLabel() {
+        // 计算总授信额和总合作量
+        const totalCredit = institutions.reduce((sum, inst) => {
+          const num = parseFloat(inst.credit.replace('亿', ''));
+          return sum + num * 100000000;
+        }, 0);
+        const totalPartners = institutions.length;
         const label = document.createElement('div');
         label.className = 'core-label';
-        label.innerHTML = `<div class="name">核心主体</div><div class="data">总授信 <span>$2.84T</span></div>`;
+        label.innerHTML = `<span><span class="dot"></span><span class="name">核心主体</span></span><div class="line"></div><div class="row"><div class="data">总授信 <span>${formatNumber(totalCredit)}</span></div><div class="data">总合作量 <span>${totalPartners}家</span></div></div>`;
         document.body.appendChild(label);
         window.coreLabel = { element: label, sphere: coreSphere };
       }
@@ -1135,8 +1248,23 @@
             currentRegion === 'global' || inst.region === currentRegion;
           sphere.visible = visible;
           connectionLines[i].line.visible = visible;
-          lineParticles[i].particles.visible = visible;
+          lineParticles[i].particles = []; // 清除粒子
+          lineParticles[i].particlesObj.visible = visible;
           nodeLabels[i].element.style.display = visible ? 'block' : 'none';
+
+          // 同时控制所有附加效果的显隐
+          if (sphere.userData.glowRing) {
+            sphere.userData.glowRing.visible = visible;
+          }
+          if (sphere.userData.arc) {
+            sphere.userData.arc.visible = visible;
+          }
+          if (sphere.userData.ring) {
+            sphere.userData.ring.visible = visible;
+          }
+          if (sphere.userData.warningRing) {
+            sphere.userData.warningRing.visible = visible;
+          }
         });
       }
 
@@ -1261,10 +1389,9 @@
           const p = window.coreLabel.sphere.position.clone();
           p.y += 45;
           p.project(camera);
-          window.coreLabel.element.style.left =
-            (p.x * 0.5 + 0.5) * window.innerWidth + 'px';
-          window.coreLabel.element.style.top =
-            (-p.y * 0.5 + 0.5) * window.innerHeight - 20 + 'px';
+          const x = (p.x * 0.5 + 0.5) * window.innerWidth;
+          const y = (-p.y * 0.5 + 0.5) * window.innerHeight - 20;
+          window.coreLabel.element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
           window.coreLabel.element.style.opacity = p.z > 1 ? '0' : '1';
         }
 
@@ -1297,9 +1424,10 @@
             l.isExtended = false;
           }
 
-          l.element.style.left = (p.x * 0.5 + 0.5) * window.innerWidth + 'px';
-          l.element.style.top =
-            (-p.y * 0.5 + 0.5) * window.innerHeight - 10 + 'px';
+          const x = (p.x * 0.5 + 0.5) * window.innerWidth;
+          const y = (-p.y * 0.5 + 0.5) * window.innerHeight - 10;
+          l.element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+          l.element.style.display = 'block';
           l.element.style.opacity = p.z > 1 ? '0' : '1';
         });
       }
@@ -1320,11 +1448,11 @@
           const dirZ = Math.sin(ang);
           const radius = sphere.userData.baseSize || 15;
 
-          // 定期创建新粒子（1-2秒随机间隔）
+          // 定期创建新粒子（短间隔）
           if (now > data.nextSpawnTime) {
             data.lastSpawnTime = now;
-            // 下次发射时间：1-2秒随机
-            data.nextSpawnTime = now + 1000 + Math.random() * 1000;
+            // 下次发射时间：短间隔
+            data.nextSpawnTime = now + 400 + Math.random() * 400;
 
             // 创建新粒子
             data.particles.push({
@@ -1367,17 +1495,23 @@
               positions[i * 3 + 1] = p.y;
               positions[i * 3 + 2] = p.z;
 
-              // 颜色随生命周期衰减
-              const fade = p.life / data.maxLife;
-              colors[i * 3] = fade * 1.5;
-              colors[i * 3 + 1] = fade * 1.5;
-              colors[i * 3 + 2] = fade * 1.5;
+              // 球体颜色混合一些白色
+              const c = data.sphereColor;
+              colors[i * 3] = c.r * 0.3 + 0.7;
+              colors[i * 3 + 1] = c.g * 0.3 + 0.7;
+              colors[i * 3 + 2] = c.b * 0.3 + 0.7;
             });
 
             // 重建 geometry
             const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute(
+              'position',
+              new THREE.BufferAttribute(positions, 3),
+            );
+            geometry.setAttribute(
+              'color',
+              new THREE.BufferAttribute(colors, 3),
+            );
 
             // 创建清晰的白色圆形粒子纹理
             const createCircleTexture = () => {
@@ -1402,7 +1536,7 @@
               map: circleTexture,
               vertexColors: true,
               transparent: true,
-              opacity: 1,
+              opacity: 0.4,
               blending: THREE.NormalBlending,
               depthWrite: false,
               sizeAttenuation: true,
@@ -1435,9 +1569,10 @@
         // 核心球体自转
         coreSphere.rotation.y += 0.003;
 
-        // 核心光环动画
+        // 核心光环动画（环现在是直接添加到场景，保持在中心）
         coreGlowRings.forEach((ring, i) => {
           ring.rotation.z += ring.userData.speed;
+          ring.position.set(0, 0, 0); // 确保保持在中心
           // 移除暗度变化效果，使用固定透明度
           ring.material.opacity = ring.userData.baseOpacity;
         });
@@ -1473,28 +1608,33 @@
             sphere.userData.glowRing.position.copy(sphere.position);
             sphere.userData.glowRing.lookAt(camera.position);
           }
-          // 白色半圆 - 面对相机，顺时针绕球心旋转
+          // 白色光环 - 半圆飞线（Shader 版）
           if (sphere.userData.arc) {
-            const arc = sphere.userData.arc;
-            // 累积旋转
-            arc.userData.rot = (arc.userData.rot || 0) + 0.015;
-            const angle = arc.userData.rot;
-
+            const dotPoints = sphere.userData.arc;
             // 位置跟随球体中心
-            arc.position.copy(sphere.position);
+            dotPoints.position.copy(sphere.position);
             // 面向相机
-            arc.lookAt(camera.position);
-            // 绕Z轴顺时针旋转（在面向相机的平面）
-            arc.rotation.z = -angle;
+            dotPoints.lookAt(camera.position);
+
+            // 更新 shader 时间（逆时针）
+            dotPoints.material.uniforms.uTime.value = time * 0.001;
           }
 
-          // 选中或悬停状态 - 显示光环
+          // 选中或悬停状态 - 显示光环并加亮球体
           if (isSelected || isHovered) {
-            sphere.userData.ring.material.opacity = isSelected ? 0.5 : 0.4;
+            sphere.userData.ring.material.opacity = isSelected ? 0.6 : 0.4;
             sphere.userData.ring.scale.set(1.15, 1.15, 1);
+            // 选中节点时球体发光
+            if (sphere.material.emissive) {
+              sphere.material.emissive.setHex(isSelected ? 0x444444 : 0x222222);
+            }
           } else {
             sphere.userData.ring.material.opacity = 0;
             sphere.userData.ring.scale.set(1, 1, 1);
+            // 恢复默认
+            if (sphere.material.emissive) {
+              sphere.material.emissive.setHex(0x000000);
+            }
           }
 
           // 警示节点 - 选中/悬停时显示并闪烁
