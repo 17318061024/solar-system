@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, toRef } from 'vue'
 import { useSolarSystem, type Institution, type SolarSystemProps } from '../composables/useSolarSystem'
+import { useMetrics } from '../composables/useMetrics'
 import RegionTabs from './RegionTabs.vue'
 import LeftRankingCard from './LeftRankingCard.vue'
 import RightCoreCard from './RightCoreCard.vue'
@@ -17,42 +18,15 @@ const emit = defineEmits<{
 
 const currentRegion = ref('global')
 
-const solarSystem = useSolarSystem(props)
-
 const {
   containerRef,
   selectedInst,
-  hoveredInst,
-  camera,
-  coreSphere,
   init,
   dispose,
   setRegion,
-} = solarSystem
+} = useSolarSystem(props)
 
-// 计算总授信额
-const totalCredit = computed(() => {
-  const total = props.institutions.reduce((sum, inst) => {
-    const num = parseFloat(inst.credit.replace('亿', ''))
-    return sum + num * 100000000
-  }, 0)
-
-  if (total >= 100000000000) {
-    return '$' + (total / 100000000000).toFixed(2) + 'T'
-  } else if (total >= 100000000) {
-    return '$' + (total / 100000000).toFixed(0) + 'B'
-  }
-  return '$' + total.toString()
-})
-
-// 核心指标数据
-const coreMetrics = computed(() => ({
-  totalCredit: totalCredit.value,
-  totalPartnership: '$1.45T',
-  partnersCount: props.institutions.length,
-  partnershipRate: '85%',
-  performanceRate: '92%',
-}))
+const { coreMetrics, capabilities } = useMetrics(toRef(props, 'institutions'))
 
 onMounted(() => {
   init()
@@ -70,24 +44,16 @@ watch(() => currentRegion.value, (region) => {
 function handleNodeClick(inst: Institution) {
   emit('node-click', inst)
 }
-
-function handleRegionChange(region: string) {
-  currentRegion.value = region
-  emit('region-change', region)
-}
 </script>
 
 <template>
   <div class="relative w-full h-full" ref="containerRef">
     <!-- 顶部区域切换 -->
-    <RegionTabs
-      v-model="currentRegion"
-      @change="handleRegionChange"
-    />
+    <RegionTabs v-model="currentRegion" />
 
     <!-- 左侧卡片 - 合作机构榜单 -->
     <LeftRankingCard
-      :institutions="institutions"
+      :institutions="props.institutions"
       :selected-institution="selectedInst"
       @select="handleNodeClick"
     />
@@ -96,7 +62,7 @@ function handleRegionChange(region: string) {
     <RightCoreCard :metrics="coreMetrics" />
 
     <!-- 右侧卡片 - 能力指标 -->
-    <RightCapabilityCard />
+    <RightCapabilityCard :capabilities="capabilities" />
 
     <!-- 底部操作提示 -->
     <HintBar />

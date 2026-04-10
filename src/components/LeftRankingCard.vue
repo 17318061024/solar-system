@@ -47,7 +47,7 @@ function handleSelect(institution: Institution) {
 </script>
 
 <template>
-  <div class="fixed left-5 top-20 w-[260px] max-h-[calc(100vh-200px)] overflow-y-auto bg-[rgba(10,10,25,0.92)] rounded-2xl p-5 backdrop-blur-xl border border-white/10 z-100">
+  <div class="absolute left-5 top-20 w-[260px] max-h-[calc(100vh-200px)] overflow-y-auto glass-card z-100">
     <h3 class="text-sm font-semibold mb-4 text-gray-300 flex items-center gap-2">合作机构榜单</h3>
     <div class="flex flex-col gap-2">
       <div

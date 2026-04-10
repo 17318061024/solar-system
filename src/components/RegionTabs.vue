@@ -11,10 +11,9 @@ interface Props {
 
 interface Emits {
   (e: 'update:modelValue', region: string): void
-  (e: 'change', region: string): void
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   regions: () => [
     { value: 'global', label: '全球视图' },
     { value: 'apac', label: 'APAC' },
@@ -28,7 +27,6 @@ const emit = defineEmits<Emits>()
 
 function handleRegionChange(region: string) {
   emit('update:modelValue', region)
-  emit('change', region)
 }
 </script>
 

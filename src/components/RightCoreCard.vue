@@ -37,7 +37,7 @@ const maxValue = Math.max(...props.chartData.map(d => d.value))
 </script>
 
 <template>
-  <div class="fixed right-5 top-20 w-[280px] bg-[rgba(10,10,25,0.92)] rounded-2xl p-5 backdrop-blur-xl border border-white/10 z-100">
+  <div class="absolute right-5 top-20 w-[280px] glass-card z-100">
     <h3 class="text-sm font-semibold mb-4 text-gray-300 flex items-center gap-2">核心主体</h3>
     <div class="flex justify-between mb-4 gap-3">
       <div class="text-center py-3 px-4 bg-white/5 rounded-xl flex-1">

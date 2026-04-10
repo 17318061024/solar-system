@@ -9,7 +9,7 @@ interface Props {
   capabilities?: Capability[]
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   capabilities: () => [
     { label: '合作能力', value: '85%', percentage: 85 },
     { label: '风险控制', value: '92%', percentage: 92 },
@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<Props>(), {
 </script>
 
 <template>
-  <div class="fixed right-5 top-80 w-[280px] bg-[rgba(10,10,25,0.92)] rounded-2xl p-5 backdrop-blur-xl border border-white/10 z-100">
+  <div class="absolute right-5 top-80 w-[280px] glass-card z-100">
     <h3 class="text-sm font-semibold mb-4 text-gray-300 flex items-center gap-2">关键能力指标</h3>
     <div class="flex flex-col gap-2.5">
       <div
